@@ -1,0 +1,5 @@
+.build/
+dist/
+Assets/AppIcon.iconset/
+.DS_Store
+.metadata_never_index
