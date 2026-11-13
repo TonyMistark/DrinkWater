@@ -9,7 +9,7 @@ OUT_DIR="${1:-dist}"
 APP_NAME="DrinkWater"
 DISPLAY_NAME="喝水提醒"
 BUNDLE_ID="cn.ice.drinkwater"
-VERSION="${DW_VERSION:-0.1.0}"
+VERSION="${DW_VERSION:-0.2.0}"
 
 echo "── 1/4 release 编译…"
 swift build -c release --disable-sandbox --product "$APP_NAME"
