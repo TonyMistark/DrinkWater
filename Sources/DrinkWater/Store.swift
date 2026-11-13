@@ -84,9 +84,13 @@ final class Store: ObservableObject {
     }
 
     func last7Days() -> [DayTotal] {
+        lastDays(7)
+    }
+
+    func lastDays(_ count: Int) -> [DayTotal] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        return (0..<7).reversed().compactMap { offset in
+        return (0..<count).reversed().compactMap { offset in
             guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
             let total = records
                 .filter { calendar.isDate($0.date, inSameDayAs: day) }
@@ -106,6 +110,12 @@ final class Store: ObservableObject {
     func undoLastDrink() {
         guard let index = records.lastIndex(where: { Calendar.current.isDateInToday($0.date) }) else { return }
         records.remove(at: index)
+        save()
+    }
+
+    /// 记录列表里按条删除，不限于今天。
+    func deleteRecord(_ id: UUID) {
+        records.removeAll { $0.id == id }
         save()
     }
 

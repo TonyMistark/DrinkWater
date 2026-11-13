@@ -9,9 +9,12 @@ struct ContentView: View {
     @EnvironmentObject private var focus: FocusMonitor
 
     @State private var tab: Tab = .today
+    @State private var summaryText = ""
+    @State private var showSummary = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case today
+        case records
         case reminder
         case sync
 
@@ -20,6 +23,7 @@ struct ContentView: View {
         var title: String {
             switch self {
             case .today: return t("Today")
+            case .records: return t("Records")
             case .reminder: return t("Reminders")
             case .sync: return t("Sync")
             }
@@ -45,6 +49,7 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     switch tab {
                     case .today: todayTab
+                    case .records: recordsTab
                     case .reminder: reminderTab
                     case .sync: syncTab
                     }
@@ -55,6 +60,9 @@ struct ContentView: View {
         .frame(width: 380, height: 600)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { notifier.refreshAuthorizationStatus() }
+        .sheet(isPresented: $showSummary) {
+            SummarySheet(text: summaryText)
+        }
     }
 
     // MARK: - 顶部
@@ -241,6 +249,206 @@ struct ContentView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cardBackground)
+    }
+
+    // MARK: - 记录与报表
+
+    private var recordsTab: some View {
+        VStack(spacing: 12) {
+            summaryCard
+            reportCard
+            distributionCard
+            recordsCard
+        }
+    }
+
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "text.alignleft")
+                    .foregroundStyle(.blue)
+                Text(t("Drinking summary"))
+                    .font(.callout.weight(.medium))
+                Spacer()
+            }
+            Text(t("One tap turns today and the last 7 days into a few readable lines."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                summaryText = DrinkInsights.summary(records: store.records, settings: store.settings)
+                showSummary = true
+            } label: {
+                Label(t("Generate Summary"), systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardBackground)
+    }
+
+    private var reportCard: some View {
+        let stats = DrinkInsights.stats(records: store.records, settings: store.settings, days: 30)
+        let days = store.lastDays(30)
+        return SettingsCard(title: t("30-day report")) {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(days) { day in
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(reportBarColor(for: day))
+                        .frame(height: reportBarHeight(for: day))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 56, alignment: .bottom)
+
+            HStack {
+                Text(days.first.map { shortDate($0.date) } ?? "")
+                Spacer()
+                Text(t("Today"))
+            }
+            .font(.system(size: 8))
+            .foregroundStyle(.secondary)
+
+            Divider()
+
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                GridItem(.flexible(), alignment: .leading)],
+                      spacing: 8) {
+                metric(t("Average day"), t("{} ml", stats.averageDay))
+                metric(t("On goal"), t("{} / 30 days", stats.goalDays))
+                metric(t("Streak"), t("{} days", stats.streak))
+                metric(t("Average cup"), t("{} ml", stats.averageCup))
+            }
+        }
+    }
+
+    private var distributionCard: some View {
+        let buckets = DrinkInsights.buckets(records: store.records, days: 30)
+        let maxML = max(1, buckets.map(\.ml).max() ?? 0)
+        return SettingsCard(title: t("By time of day")) {
+            ForEach(buckets) { bucket in
+                HStack(spacing: 8) {
+                    Text(bucket.label)
+                        .font(.caption2)
+                        .frame(width: 54, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.primary.opacity(0.06))
+                            Capsule()
+                                .fill(Color.blue.opacity(0.6))
+                                .frame(width: geo.size.width * CGFloat(bucket.ml) / CGFloat(maxML))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text(t("{} ml", bucket.ml))
+                        .font(.system(size: 9))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 56, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    private var recordsCard: some View {
+        SettingsCard(title: t("Drinking records")) {
+            if recordGroups.isEmpty {
+                Text(t("No records yet. Drink a glass and it will show up here."))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(recordGroups, id: \.day) { group in
+                    Text(dayTitle(group.day))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                    ForEach(group.items) { record in
+                        HStack(spacing: 8) {
+                            Text(timeText(record.date))
+                                .font(.caption)
+                                .monospacedDigit()
+                            Text(t("{} ml", record.ml))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                store.deleteRecord(record.id)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help(t("Delete"))
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private var recordGroups: [(day: Date, items: [DrinkRecord])] {
+        let calendar = Calendar.current
+        let recent = store.records.sorted { $0.date > $1.date }.prefix(40)
+        var order: [Date] = []
+        var map: [Date: [DrinkRecord]] = [:]
+        for record in recent {
+            let day = calendar.startOfDay(for: record.date)
+            if map[day] == nil { order.append(day) }
+            map[day, default: []].append(record)
+        }
+        return order.map { ($0, map[$0] ?? []) }
+    }
+
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+        }
+    }
+
+    private func reportBarHeight(for day: DayTotal) -> CGFloat {
+        let goal = max(1, store.settings.dailyGoalML)
+        let ratio = min(1, Double(day.total) / Double(goal))
+        return max(3, CGFloat(ratio) * 56)
+    }
+
+    private func reportBarColor(for day: DayTotal) -> Color {
+        if day.total >= store.settings.dailyGoalML { return .blue }
+        if day.total > 0 { return .blue.opacity(0.4) }
+        return Color.primary.opacity(0.08)
+    }
+
+    private func shortDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L10n.isChinese ? "zh_CN" : "en_US")
+        formatter.dateFormat = L10n.isChinese ? "M/d" : "MMM d"
+        return formatter.string(from: date)
+    }
+
+    private func timeText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L10n.isChinese ? "zh_CN" : "en_US")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func dayTitle(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return t("Today") }
+        if calendar.isDateInYesterday(day) { return t("Yesterday") }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: L10n.isChinese ? "zh_CN" : "en_US")
+        formatter.dateFormat = L10n.isChinese ? "M月d日 EEEE" : "EEEE, MMM d"
+        return formatter.string(from: day)
     }
 
     // MARK: - 提醒设置
@@ -553,6 +761,53 @@ struct ContentView: View {
     private func minutesFromDate(_ date: Date) -> Int {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
         return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+    }
+}
+
+// MARK: - 喝水总结
+
+struct SummarySheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(t("Drinking summary"))
+                    .font(.headline)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                Text(text)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                } label: {
+                    Label(t("Copy"), systemImage: "doc.on.doc")
+                }
+                Spacer()
+                Button(t("Close")) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(18)
+        .frame(width: 340, height: 300)
     }
 }
 
