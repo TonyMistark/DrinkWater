@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject private var scheduler: ReminderScheduler
     @EnvironmentObject private var notifier: Notifier
     @EnvironmentObject private var services: AppServices
+    @EnvironmentObject private var focus: FocusMonitor
 
     @State private var tab: Tab = .today
 
@@ -311,6 +312,39 @@ struct ContentView: View {
                 }
             }
 
+            SettingsCard(title: t("Launch")) {
+                LaunchAtLoginRow()
+            }
+
+            SettingsCard(title: t("Focus")) {
+                Toggle(t("Pause reminders during Focus"), isOn: $store.settings.muteDuringFocus)
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(focus.isFocusActive ? Color.indigo : Color.secondary.opacity(0.35))
+                        .frame(width: 6, height: 6)
+                    Text(focusStatusText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if store.settings.muteDuringFocus && focus.needsPermission {
+                        Button(t("Allow Focus Access")) { focus.requestAuthorization() }
+                            .buttonStyle(.link)
+                            .font(.caption2)
+                    }
+                }
+
+                Text(t("When a Focus is on, reminders wait and arrive once it ends."))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .onChange(of: store.settings.muteDuringFocus) { enabled in
+                if enabled, focus.needsPermission {
+                    focus.requestAuthorization()
+                }
+            }
+
             if store.systemNotificationDenied {
                 SettingsCard(title: t("System notifications are off")) {
                     Text(t("Banners will not appear. You can allow notifications for DrinkWater again in System Settings."))
@@ -462,6 +496,20 @@ struct ContentView: View {
         return t("Next reminder · {}", TimeText.countdown(scheduler.remainingSeconds))
     }
 
+    private var focusStatusText: String {
+        guard store.settings.muteDuringFocus else { return t("Not following Focus") }
+        switch focus.authorization {
+        case .authorized:
+            return focus.isFocused == true ? t("Focus is on · reminders held") : t("Focus is off")
+        case .denied:
+            return t("Focus access denied. Allow it in System Settings.")
+        case .notDetermined:
+            return t("Allow access to Focus status to use this.")
+        case .restricted, .unknown:
+            return t("Focus status is unavailable on this Mac.")
+        }
+    }
+
     private func barHeight(for day: DayTotal) -> CGFloat {
         let goal = max(1, store.settings.dailyGoalML)
         let ratio = min(1, Double(day.total) / Double(goal))
@@ -529,3 +577,61 @@ struct SettingsCard<Content: View>: View {
         )
     }
 }
+
+// MARK: - 登录启动行
+
+struct LaunchAtLoginRow: View {
+    @State private var isOn: Bool = LaunchAtLogin.isEnabled
+    @State private var needsApproval: Bool = LaunchAtLogin.needsApproval
+    @State private var error: String?
+
+    var body: some View {
+        Toggle(t("Start when I log in"), isOn: Binding(
+            get: { isOn },
+            set: { set($0) }
+        ))
+
+        if needsApproval {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                Text(t("macOS is asking for approval. Open Login Items and flip the switch on."))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(t("Open Settings")) { LaunchAtLogin.openSystemSettings() }
+                    .buttonStyle(.link)
+                    .font(.caption2)
+            }
+        } else if let error {
+            Text(error)
+                .font(.caption2)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if !LaunchAtLogin.isSupported {
+            Text(t("Not available when running from the source build. Please use the .app."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func set(_ newValue: Bool) {
+        guard LaunchAtLogin.isSupported else {
+            isOn = false
+            return
+        }
+        if let reason = LaunchAtLogin.set(newValue) {
+            error = reason
+            isOn = LaunchAtLogin.isEnabled
+            needsApproval = LaunchAtLogin.needsApproval
+        } else {
+            isOn = LaunchAtLogin.isEnabled
+            needsApproval = LaunchAtLogin.needsApproval
+            error = nil
+        }
+    }
+}
+

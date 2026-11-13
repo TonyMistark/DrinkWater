@@ -56,6 +56,8 @@ struct AppSettings: Codable, Equatable {
     var soundName: String = "Glass"
     var speechEnabled: Bool = false
     var menuBarPulse: Bool = true
+    /// 专注模式期间暂缓提醒（不弹、不响、不推送），结束后补一次
+    var muteDuringFocus: Bool = true
 
     // 手机 / 手表推送
     var pushProvider: PushProvider = .none
@@ -87,6 +89,7 @@ struct AppSettings: Codable, Equatable {
         soundName = try c.decodeIfPresent(String.self, forKey: .soundName) ?? d.soundName
         speechEnabled = try c.decodeIfPresent(Bool.self, forKey: .speechEnabled) ?? d.speechEnabled
         menuBarPulse = try c.decodeIfPresent(Bool.self, forKey: .menuBarPulse) ?? d.menuBarPulse
+        muteDuringFocus = try c.decodeIfPresent(Bool.self, forKey: .muteDuringFocus) ?? d.muteDuringFocus
         pushProvider = try c.decodeIfPresent(PushProvider.self, forKey: .pushProvider) ?? d.pushProvider
         barkServer = try c.decodeIfPresent(String.self, forKey: .barkServer) ?? d.barkServer
         barkKey = try c.decodeIfPresent(String.self, forKey: .barkKey) ?? d.barkKey

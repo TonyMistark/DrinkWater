@@ -8,6 +8,7 @@ final class AppServices: ObservableObject {
     let installer = UpdateInstaller(steps: UpdateInstaller.productionSteps())
     let crashes = CrashStore()
     let profile = ProfileStore()
+    let focus = FocusMonitor()
 
     init() {
         // 顺序不能反：先收上次的尸（读现场文件），再装处理器——
@@ -16,5 +17,6 @@ final class AppServices: ObservableObject {
         CrashBreadcrumbs.install(directory: crashes.directory)
         CrashCatcher.install(directory: crashes.directory)
         CrashBreadcrumbs.note("launch \(CrashEnvironment.appVersion)")
+        focus.start()
     }
 }

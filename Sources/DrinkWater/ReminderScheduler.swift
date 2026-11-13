@@ -45,6 +45,9 @@ final class ReminderScheduler: ObservableObject {
     private var overrideNext: Date?
 
     var onFire: (() -> Void)?
+    /// 到点时是否应该暂缓（专注模式）。返回 true 就把这一次推迟 5 分钟，
+    /// **不记为已提醒**——专注结束后照常补上。
+    var shouldHoldReminder: (() -> Bool)?
 
     init(store: Store) {
         self.store = store
@@ -109,6 +112,11 @@ final class ReminderScheduler: ObservableObject {
     private func tick() {
         let now = Date()
         if let fire = nextFireAt, now >= fire {
+            if shouldHoldReminder?() == true {
+                nextFireAt = WorkWindow.clamp(now.addingTimeInterval(5 * 60), settings: store.settings)
+                updateCountdown(now: now)
+                return
+            }
             store.markReminded(at: now)
             overrideNext = nil
             isSnoozed = false

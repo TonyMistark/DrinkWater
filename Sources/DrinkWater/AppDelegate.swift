@@ -26,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduler.onFire = { [weak self] in
             self?.notifier.notify()
         }
+        let settingsStore = store
+        let focusMonitor = services.focus
+        scheduler.shouldHoldReminder = {
+            settingsStore.settings.muteDuringFocus && focusMonitor.isFocusActive
+        }
         store.settingsChanged = { [weak self] in
             self?.scheduler.recompute()
             self?.updateStatusTitle()
@@ -93,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(scheduler)
             .environmentObject(notifier)
             .environmentObject(services)
+            .environmentObject(services.focus)
         popover.contentViewController = NSHostingController(rootView: root)
     }
 
@@ -183,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleWake() {
+        services.focus.refresh()
         scheduler.recompute()
     }
 
